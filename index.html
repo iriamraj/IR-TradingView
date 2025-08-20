@@ -195,14 +195,34 @@
     .selected img {
       filter: brightness(0) invert(1);
     }
+    
+    
+.floating-data-layout {
+  position: absolute;
+  z-index: 20;
+  display: none;
+  padding: 5px;
+  font-size: 12px;
+  font-weight: bold;
+  color: #fff;
+  backdrop-filter: blur(2px);
+  background: #ffffff14;
+  border: 1px solid #666666;
+  border-radius: 10px;
+  pointer-events: none; /* so it won't block chart interaction */
+  white-space: nowrap;
+}
+
+
 </style>
 </head>
 <body>
   <div class="background-layout">
     <div class="main-layout" id="main-layout">
-      <div class="chart-layout" id="chart-view"></div>
+      <div class="chart-layout" id="chart-view">
+              <div class="floating-countdown"></div>
+      </div>
       <div class="orderbook-layout" id="orderbook-layout"></div>
-      <div class="floating-countdown"></div>
       <div class="floating-layout">
         <div class="layout-floating" id="chart-name-layout">
           <span>BTCUSDT</span>
@@ -340,6 +360,32 @@
             },
             priceScaleId: '', // Set an empty price scale ID to make it an overlay
         });
+        // Create a floating element for volume display
+// Create floating element for volume
+const floatingVolume = document.createElement("div");
+floatingVolume.className = "floating-data-layout";
+floatingVolume.textContent = "VOL: 0";
+document.querySelector(".chart-layout").appendChild(floatingVolume);
+
+chart.subscribeCrosshairMove(param => {
+    if (!param || !param.time || !param.point || !param.seriesData) {
+        floatingVolume.style.display = "none"; 
+        return;
+    }
+
+    const volData = param.seriesData.get(volumeSeries);
+    if (volData) {
+        floatingVolume.style.display = "block";
+        floatingVolume.textContent = `VOL: ${volData.value}`;
+
+        // Move box near crosshair
+        const chartElement = document.querySelector(".chart-layout");
+        const chartRect = chartElement.getBoundingClientRect();
+
+        floatingVolume.style.left = (param.point.x + 10) + "px"; // offset to the right
+        floatingVolume.style.top = (param.point.y - 20) + "px";  // offset above
+    }
+});
         
         // Ensure volume series is initially hidden
         volumeSeries.applyOptions({
@@ -392,6 +438,37 @@
             candleSeries.setData(formattedCandleData);
             volumeSeries.setData(formattedVolumeData);
         }
+        function animateCandleUpdate(series, newData, duration = 300, steps = 10) {
+    const lastBar = series._lastBar;
+    if (!lastBar) {
+        series.update(newData);
+        series._lastBar = newData;
+        return;
+    }
+
+    let step = 0;
+    const interval = duration / steps;
+
+    const animate = setInterval(() => {
+        step++;
+        const progress = step / steps;
+
+        const interpolated = {
+            time: newData.time,
+            open: lastBar.open + (newData.open - lastBar.open) * progress,
+            high: lastBar.high + (newData.high - lastBar.high) * progress,
+            low: lastBar.low + (newData.low - lastBar.low) * progress,
+            close: lastBar.close + (newData.close - lastBar.close) * progress,
+        };
+
+        series.update(interpolated);
+
+        if (step >= steps) {
+            clearInterval(animate);
+            series._lastBar = newData;
+        }
+    }, interval);
+}
 
         /**
          * Starts a live WebSocket data stream for a given interval.
@@ -429,8 +506,11 @@
                 }
 
                 // Update the chart with the new candle data
-                candleSeries.update(update);
-                volumeSeries.update(volumeUpdate);
+                // Smooth animated update for candles
+animateCandleUpdate(candleSeries, update, 400, 12);
+
+// Volume can stay instant, or we can animate too later
+volumeSeries.update(volumeUpdate);
 
                 // Sync the countdown with the precise server time from the WebSocket data
                 // 💡 FIX: Use the IST offset for the countdown calculation.
@@ -541,6 +621,7 @@
             "preview-tf-btn": "timefreame-layout",
             "expand-indicator-button": "indicator-btn-layout",
             "orderbook-btn": "orderbook-layout",
+          
         };
 
         // Add click listeners to all toggle buttons
